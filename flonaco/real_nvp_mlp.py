@@ -12,18 +12,21 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+import sys; sys.path.append('sampling_toolbox/flonaco')
+
 from flonaco.models import MLP
 from torch.distributions.multivariate_normal import MultivariateNormal
 from flonaco.two_channel import bridge_energy, get_bridge
 
 
 class ResidualAffineCoupling(nn.Module):
-    """ Residual Affine Coupling layer 
-    Implements coupling layers with a rescaling 
+    """ Residual Affine Coupling layer
+    Implements coupling layers with a rescaling
     Args:
         s (nn.Module): scale network
         t (nn.Module): translation network
-        mask (binary tensor): binary array of same 
+        mask (binary tensor): binary array of same
         dt (float): rescaling factor for s and t
     """
 
@@ -75,11 +78,11 @@ class RealNVP_MLP(nn.Module):
         hidden_dim (int): # of hidden neurones per layer (coupling MLPs)
     """
 
-    def __init__(self, dim, n_realnvp_blocks, 
+    def __init__(self, dim, n_realnvp_blocks,
                  block_depth,
                  init_weight_scale=None,
                  prior_arg={'type': 'standn'},
-                 mask_type='half',  
+                 mask_type='half',
                  hidden_dim=10,
                  hidden_depth=3,
                  hidden_bias=True,
@@ -91,8 +94,8 @@ class RealNVP_MLP(nn.Module):
         self.dim = dim
         self.n_blocks = n_realnvp_blocks
         self.block_depth = block_depth
-        self.couplings_per_block = 2  # one update of entire layer per block 
-        self.n_layers_in_coupling = hidden_depth  # depth of MLPs in coupling layers 
+        self.couplings_per_block = 2  # one update of entire layer per block
+        self.n_layers_in_coupling = hidden_depth  # depth of MLPs in coupling layers
         self.hidden_dim_in_coupling = hidden_dim
         self.hidden_bias = hidden_bias
         self.hidden_activation = hidden_activation
@@ -186,7 +189,7 @@ class RealNVP_MLP(nn.Module):
         if return_per_block:
             xs = [x]
             log_det_jacs = [log_det_jac]
-        
+
         for block in range(self.n_blocks):
             couplings = self.coupling_layers[::-1][block]
 
@@ -232,7 +235,7 @@ class RealNVP_MLP(nn.Module):
                 mask = 1 - self.mask
             else:
                 mask = self.mask
-            
+
             dt = self.n_blocks * self.couplings_per_block * self.block_depth
             dt = 2 / dt
             coupling_layers.append(ResidualAffineCoupling(

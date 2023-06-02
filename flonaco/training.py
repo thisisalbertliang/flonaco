@@ -30,7 +30,9 @@ def train(model, target, n_iter=10, lr=1e-1, bs=100,
           return_all_xs=True,
           jump_tol=1e2,
           save_splits=10,
-          grad_clip=1e4):
+          grad_clip=1e4,
+          tb_writer=None,
+    ):
     """"
     Main training/sampling function.
 
@@ -41,10 +43,10 @@ def train(model, target, n_iter=10, lr=1e-1, bs=100,
         lr (float): learning rate
         bs (int): batchsize
         use_scheduler (bool): if learning rate schedule should be used
-        step_schedule (int): iteration frequency of schedule   
-        args_loss (dict): 
+        step_schedule (int): iteration frequency of schedule
+        args_loss (dict):
                     'type' - loss type 'fwd', 'bwd', 'js'
-                    'samp' - sampling method 'langevin', 'direct', 'mhlangevin' 
+                    'samp' - sampling method 'langevin', 'direct', 'mhlangevin'
                     + kwargs for sampling method
                     Note that not all combinations are possible
                     depending on target etc.
@@ -85,19 +87,19 @@ def train(model, target, n_iter=10, lr=1e-1, bs=100,
             x, acc = run_metropolis(
                 model, target, x_init, n_steps)
             kwargs['x_init'] = x[-1, ...]
-            
+
             kwargs['acc_rate'] = (acc.cpu().numpy() * 1).mean()
             return x
 
         kwargs = {'x_init': x_init}
 
 
-    
+
     elif 'langevin' in args_loss['samp']:
         ## setting initialization for chain methods
         skip_burnin = False
         assert args_loss['n_tot'] <= bs
-        
+
         if args_loss['x_init_samp'] is not None:
             x_init = args_loss['x_init_samp'][-args_loss['n_tot']:]
             skip_burnin = True
@@ -106,12 +108,13 @@ def train(model, target, n_iter=10, lr=1e-1, bs=100,
                                  device=model.device)
             print('Random init!')
         elif isinstance(target, MoG) or isinstance(target, Croissants):
+            # Initialize the chains at the modes of the target
             x_init = torch.stack(target.means)
             x_init = x_init.repeat_interleave(
                 int(args_loss['n_tot'] / len(target.means)), dim=0)
         elif isinstance(target, PhiFour):
             if 'n_tot' in args_loss.keys():
-                x_init = torch.ones(args_loss['n_tot'], model.dim, 
+                x_init = torch.ones(args_loss['n_tot'], model.dim,
                                     device=model.device)
                 n_pos = int(args_loss['ratio_pos_init'] * args_loss['n_tot'])
                 if target.tilt is None:
@@ -155,7 +158,7 @@ def train(model, target, n_iter=10, lr=1e-1, bs=100,
                 kwargs['x_init'] = x[-1, ...].detach().requires_grad_()
                 kwargs['acc_rate'] = (acc.cpu().numpy() * 1).mean()
                 return x
-    
+
         elif args_loss['samp'] == 'malangevin':
 
             def sample_func(bs, x_init=x_init, dt=100, beta=1, acc_rate=None):
@@ -191,8 +194,8 @@ def train(model, target, n_iter=10, lr=1e-1, bs=100,
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     if use_scheduler:
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 
-                                                    step_size=step_schedule, 
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
+                                                    step_size=step_schedule,
                                                     gamma=0.5)
 
     fig = plt.figure(figsize=(15, 5))
@@ -255,7 +258,7 @@ def train(model, target, n_iter=10, lr=1e-1, bs=100,
             for p in model.parameters():
                 param_norm = p.grad.detach().data.norm(2)
                 total_norm += param_norm.item() ** 2
-            total_norm = total_norm ** 0.5 
+            total_norm = total_norm ** 0.5
             grad_norms.append(total_norm)
 
         if use_scheduler:
@@ -323,6 +326,8 @@ def train(model, target, n_iter=10, lr=1e-1, bs=100,
 
             plt.tight_layout()
             a += 1  # update counter of axes to plots
+
+    tb_writer.add_figure('samples', fig, global_step=0)
 
     to_return = {
         'model': model,
